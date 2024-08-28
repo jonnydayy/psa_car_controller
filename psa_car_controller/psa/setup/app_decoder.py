@@ -2,7 +2,7 @@
 import json
 import logging
 import traceback
-
+import os
 import requests
 
 from psa_car_controller.psa.constants import BRAND
@@ -40,6 +40,7 @@ class InitialSetup:
         self.country_code = country_code
         self.user_info = None
         self.customer_id = None
+
         try:
             res = requests.post(apk_parser.host_brandid_prod + "/GetAccessToken",
                                 headers={
@@ -56,7 +57,10 @@ class InitialSetup:
                                 timeout=TIMEOUT_IN_S
                                 )
 
-            self.token = res.json()["accessToken"]
+            res.raise_for_status()
+            self.token = res.json().get("accessToken")
+            if not self.token:
+                raise KeyError("accessToken not found in the response.")
         except Exception as ex:
             msg = traceback.format_exc() + f"\nHOST_BRANDID : {apk_parser.host_brandid_prod} " \
                                            f"sitecode: {apk_parser.site_code}"
@@ -76,6 +80,12 @@ class InitialSetup:
                                self.country_code, BRAND[self.package_name]["brand_code"])
 
     def __fetch_user_info(self):
+        public_cert = "certs/public.pem"
+        private_cert = "certs/private.pem"
+
+        if not os.path.exists(public_cert) or not os.path.exists(private_cert):
+            raise FileNotFoundError(f"Certificate files not found. Ensure {public_cert} and {private_cert} exist.")
+
         try:
             res2 = requests.post(
                 f"https://mw-{BRAND[self.package_name]['brand_code'].lower()}-m2c.mym.awsmpsa.com/api/v1/user",
@@ -93,11 +103,17 @@ class InitialSetup:
                     "User-Agent": "okhttp/4.8.0",
                     "Version": APP_VERSION
                 },
-                cert=("certs/public.pem", "certs/private.pem"),
+                cert=(public_cert, private_cert),
                 timeout=TIMEOUT_IN_S
             )
 
-            res_dict = res2.json()["success"]
+            res2.raise_for_status()
+            res_dict = res2.json().get("success")
+            if not res_dict:
+                raise KeyError("'success' key not found in the response.")
+        except requests.exceptions.SSLError as ssl_ex:
+            logger.error("SSL error occurred: %s", ssl_ex)
+            raise
         except Exception as ex:
             msg = traceback.format_exc()
             try:
@@ -106,6 +122,7 @@ class InitialSetup:
                 pass
             logger.error(msg)
             raise ConnectionError(msg) from ex
+
         return res_dict
 
     def connect(self, code, config_prefix=""):
@@ -115,7 +132,7 @@ class InitialSetup:
 
         if len(res) == 0:
             raise ValueError(
-                "No vehicle in your account is compatible with this API, you vehicle is probably too old...")
+                "No vehicle in your account is compatible with this API, your vehicle is probably too old...")
 
         for vehicle in self.user_info["vehicles"]:
             car = self.psacc.vehicles_list.get_car_by_vin(vehicle["vin"])
@@ -133,3 +150,5 @@ class InitialSetup:
         charge_controls.save_config()
         app.load_app()
         app.start_remote_control()
+
+
