@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 APP_VERSION = "1.48.1"
 GITHUB_USER = "jonnydayy"
-GITHUB_REPO = "psa_car_controller"
+GITHUB_REPO = "psa_apk"
 TIMEOUT_IN_S = 10
 app = PSACarController()
 
